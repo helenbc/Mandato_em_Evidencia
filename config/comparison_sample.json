@@ -1,0 +1,18 @@
+{
+  "description": "Amostra conservadora para comparar falas sobre reforma tributaria com a votacao principal do PLP 68/2024.",
+  "votings": [
+    {
+      "votacao_id": "2430143-72",
+      "topic_terms": [
+        "reforma tributaria",
+        "legislacao tributaria",
+        "carga tributaria",
+        "impostos"
+      ],
+      "question": "Aprovacao do texto-base de regulamentacao da reforma tributaria no PLP 68/2024",
+      "yes_stance": "FAVORAVEL",
+      "no_stance": "CONTRARIO"
+    }
+  ]
+}
+
