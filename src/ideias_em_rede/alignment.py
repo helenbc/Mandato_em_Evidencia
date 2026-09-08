@@ -16,6 +16,9 @@ FEDERATION_MEMBERS = {
     "FDR PSOL REDE": {"PSOL", "REDE"},
 }
 
+COMPARABLE_VOTES = {"SIM", "NAO", "ABSTENCAO", "OBSTRUCAO"}
+MINIMUM_BENCH_VOTES = 2
+
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
     """Carrega um JSONL completo em memória para as etapas analíticas."""
@@ -74,22 +77,84 @@ def resolve_orientation(
     return "found", value, label
 
 
+def _bench_index(
+    bench_votes: list[dict[str, Any]],
+) -> dict[tuple[str, str], list[tuple[int | None, str]]]:
+    """Indexa o placar completo por (votação, partido) para o fallback."""
+
+    index: dict[tuple[str, str], list[tuple[int | None, str]]] = defaultdict(list)
+    for vote in bench_votes:
+        deputy = vote.get("deputado_") or vote.get("deputado") or {}
+        try:
+            deputy_id: int | None = int(deputy.get("id"))
+        except (TypeError, ValueError):
+            deputy_id = None
+        party = normalize_text(str(deputy.get("siglaPartido") or ""))
+        value = canonical_vote(vote.get("tipoVoto"))
+        if not party or value not in COMPARABLE_VOTES:
+            continue
+        index[(str(vote.get("votacao_id")), party)].append((deputy_id, value))
+    return index
+
+
+def party_majority(
+    party: str,
+    voting_id: str,
+    bench_index: dict[tuple[str, str], list[tuple[int | None, str]]],
+    exclude_deputy_id: int | None,
+) -> tuple[str | None, int]:
+    """Calcula a maioria da bancada numa votação como fallback.
+
+    Considera somente votos canônicos comparáveis do mesmo partido (sigla da
+    época, registrada no próprio voto), excluindo o parlamentar avaliado
+    (leave-one-out). Exige ao menos ``MINIMUM_BENCH_VOTES`` votos de colegas;
+    empate no topo significa sem maioria. Retorna ``(valor, base)``.
+    """
+
+    rows = [
+        (deputy_id, value)
+        for deputy_id, value in bench_index.get(
+            (voting_id, normalize_text(party)), []
+        )
+        if deputy_id != exclude_deputy_id
+    ]
+    base = len(rows)
+    if base < MINIMUM_BENCH_VOTES:
+        return None, base
+    counts: dict[str, int] = {}
+    for _, value in rows:
+        counts[value] = counts.get(value, 0) + 1
+    top = max(counts.values())
+    winners = [value for value, total in counts.items() if total == top]
+    if len(winners) != 1:
+        return None, base
+    return winners[0], base
+
+
 def compute_party_alignment(
     votes: list[dict[str, Any]],
     orientations: list[dict[str, Any]],
     votings: list[dict[str, Any]],
+    bench_votes: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Calcula detalhes por voto e o resumo agregado por parlamentar.
 
     Fórmula: ``alinhados / (alinhados + divergentes)``. Votos sem orientação
     comparável continuam nos detalhes e na cobertura, mas não no denominador.
+
+    Quando ``bench_votes`` (placar completo) é informado, votos com status
+    ``no_orientation`` usam a maioria da bancada como fallback
+    (``orientacao_fonte`` vira ``MAIORIA_<PARTIDO>``). A orientação oficial
+    sempre prevalece em caso de conflito.
     """
 
     orientations_by_voting: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     for orientation in orientations:
         orientations_by_voting[str(orientation["votacao_id"])].append(orientation)
     votings_by_id = {str(voting["id"]): voting for voting in votings}
+    bench_index = _bench_index(bench_votes) if bench_votes else None
     details: list[dict[str, Any]] = []
+    majority_counts: defaultdict[int, int] = defaultdict(int)
 
     for vote in votes:
         voting_id = str(vote["votacao_id"])
@@ -99,11 +164,27 @@ def compute_party_alignment(
         orientation_status, orientation_value, orientation_source = resolve_orientation(
             party, orientations_by_voting[voting_id]
         )
-        if vote_value not in {"SIM", "NAO", "ABSTENCAO", "OBSTRUCAO"}:
+        majority_used = False
+        if vote_value not in COMPARABLE_VOTES:
             status = "excluded_vote"
         elif orientation_status != "found":
             status = orientation_status
-        elif orientation_value not in {"SIM", "NAO", "ABSTENCAO", "OBSTRUCAO"}:
+            if orientation_status == "no_orientation" and bench_index is not None:
+                try:
+                    deputy_id = int(deputy.get("id"))
+                except (TypeError, ValueError):
+                    deputy_id = None
+                majority_value, _base = party_majority(
+                    party, voting_id, bench_index, deputy_id
+                )
+                if majority_value is not None:
+                    orientation_value = majority_value
+                    orientation_source = f"MAIORIA_{party}" if party else "MAIORIA"
+                    status = "aligned" if vote_value == majority_value else "diverged"
+                    majority_used = True
+                    if deputy_id is not None:
+                        majority_counts[deputy_id] += 1
+        elif orientation_value not in COMPARABLE_VOTES:
             status = "excluded_orientation"
         else:
             status = "aligned" if vote_value == orientation_value else "diverged"
@@ -148,6 +229,7 @@ def compute_party_alignment(
                 "comparable_votes": comparable,
                 "aligned_votes": status_counts["aligned"],
                 "diverged_votes": status_counts["diverged"],
+                "majority_fallback_votes": majority_counts.get(deputy_id, 0),
                 "released": status_counts["released"],
                 "no_orientation": status_counts["no_orientation"],
                 "ambiguous_orientation": status_counts["ambiguous_orientation"],
@@ -171,7 +253,8 @@ def compute_party_alignment(
     summary = {
         "generated_at": utc_now_iso(),
         "methodology": {
-            "denominator": "Votos com orientacao explicita do partido ou federacao identificavel.",
+            "denominator": "Votos com orientacao explicita do partido ou federacao identificavel, ou maioria da bancada como fallback.",
+            "fallback": "Sem orientacao explicita, usa a maioria da bancada na votacao (quorum minimo de 2 colegas, leave-one-out, empate = sem base; fonte MAIORIA_<PARTIDO>). A orientacao oficial prevalece em conflito.",
             "excluded": [
                 "bancada liberada",
                 "orientacao ausente ou ambigua",
@@ -184,6 +267,7 @@ def compute_party_alignment(
             "comparable_votes": total_comparable,
             "aligned_votes": total_aligned,
             "diverged_votes": sum(row["diverged_votes"] for row in deputies),
+            "majority_fallback_votes": sum(row["majority_fallback_votes"] for row in deputies),
             "alignment_score": (
                 round(total_aligned / total_comparable, 4) if total_comparable else None
             ),
@@ -198,11 +282,23 @@ def run_party_alignment(
     orientations_path: Path,
     votings_path: Path,
     output_dir: Path,
+    bench_votes_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Lê insumos JSONL, calcula a métrica e grava detalhe e resumo."""
+    """Lê insumos JSONL, calcula a métrica e grava detalhe e resumo.
 
+    O placar completo (``votos_completos.jsonl``) é opcional: quando ausente,
+    o cálculo usa somente a orientação oficial, como antes.
+    """
+
+    if bench_votes_path is None:
+        candidate = Path(votes_path).parent / "votos_completos.jsonl"
+        bench_votes_path = candidate if candidate.is_file() else None
+    bench_votes = read_jsonl(bench_votes_path) if bench_votes_path is not None else None
     details, summary = compute_party_alignment(
-        read_jsonl(votes_path), read_jsonl(orientations_path), read_jsonl(votings_path)
+        read_jsonl(votes_path),
+        read_jsonl(orientations_path),
+        read_jsonl(votings_path),
+        bench_votes=bench_votes,
     )
     write_jsonl(output_dir / "alinhamento_detalhes.jsonl", details)
     write_json(output_dir / "alinhamento_resumo.json", summary)
