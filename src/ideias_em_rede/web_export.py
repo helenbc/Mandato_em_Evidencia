@@ -28,7 +28,7 @@ def export_dashboard_data(
     as falas aparecem como pendentes e nenhuma classificação é simulada.
     """
 
-    resolution = read_json(processed_dir / "deputados_resolvidos.json")
+    resolution = _optional_json(processed_dir / "deputados_resolvidos.json", {"deputies": []})
     alignment = _optional_json(processed_dir / "analysis/alinhamento_resumo.json", {"deputies": [], "totals": {}})
     alignment_details = _optional_jsonl(processed_dir / "analysis/alinhamento_detalhes.jsonl")
     candidates = _optional_jsonl(processed_dir / "analysis/posicoes_candidatas.jsonl")
