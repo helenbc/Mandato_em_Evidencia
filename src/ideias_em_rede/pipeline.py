@@ -51,7 +51,9 @@ def collect_votes_and_orientations(
     """Coleta votações do período e conserva votos dos deputados selecionados.
 
     As votações são consultadas em paralelo. Orientações só são baixadas quando
-    ao menos um deputado selecionado possui voto naquela votação.
+    ao menos um deputado selecionado possui voto naquela votação. Para essas
+    votações, o placar completo também é conservado em ``votos_completos.jsonl``
+    para permitir o cálculo da maioria da bancada como fallback.
     """
 
     start_date = _validate_date(start_date)
@@ -72,33 +74,39 @@ def collect_votes_and_orientations(
 
     matched_votings: list[dict[str, Any]] = []
     selected_votes: list[dict[str, Any]] = []
+    bench_votes: list[dict[str, Any]] = []
     orientations: list[dict[str, Any]] = []
 
-    def fetch(voting: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    def fetch(
+        voting: dict[str, Any],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
         votes = client.voting_votes(str(voting["id"]))
         filtered = [vote for vote in votes if _deputy_id_from_vote(vote) in selected_ids]
-        return voting, filtered
+        return voting, filtered, votes
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
         futures = {executor.submit(fetch, voting): voting for voting in votings}
         for future in as_completed(futures):
-            voting, votes = future.result()
+            voting, votes, all_votes = future.result()
             if not votes:
                 continue
             voting_id = str(voting["id"])
             matched_votings.append({**voting, "selected_vote_count": len(votes)})
             selected_votes.extend({"votacao_id": voting_id, **vote} for vote in votes)
+            bench_votes.extend({"votacao_id": voting_id, **vote} for vote in all_votes)
             for orientation in client.voting_orientations(voting_id):
                 orientations.append({"votacao_id": voting_id, **orientation})
 
     matched_votings.sort(key=lambda row: (row.get("dataHoraRegistro") or "", str(row["id"])))
     selected_votes.sort(key=lambda row: (str(row["votacao_id"]), _deputy_id_from_vote(row) or 0))
+    bench_votes.sort(key=lambda row: (str(row["votacao_id"]), _deputy_id_from_vote(row) or 0))
     orientations.sort(
         key=lambda row: (str(row["votacao_id"]), str(row.get("siglaBancada") or ""))
     )
 
     write_jsonl(output_dir / "votacoes.jsonl", matched_votings)
     write_jsonl(output_dir / "votos.jsonl", selected_votes)
+    write_jsonl(output_dir / "votos_completos.jsonl", bench_votes)
     write_jsonl(output_dir / "orientacoes.jsonl", orientations)
     summary = {
         "generated_at": utc_now_iso(),
@@ -108,10 +116,12 @@ def collect_votes_and_orientations(
         "listed_votings": len(votings),
         "votings_with_selected_votes": len(matched_votings),
         "selected_votes": len(selected_votes),
+        "bench_votes": len(bench_votes),
         "orientations": len(orientations),
         "output_files": {
             "votacoes": str(output_dir / "votacoes.jsonl"),
             "votos": str(output_dir / "votos.jsonl"),
+            "votos_completos": str(output_dir / "votos_completos.jsonl"),
             "orientacoes": str(output_dir / "orientacoes.jsonl"),
         },
     }

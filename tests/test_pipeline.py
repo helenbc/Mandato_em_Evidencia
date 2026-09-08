@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -45,6 +46,36 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(summary["votings_with_selected_votes"], 1)
             self.assertEqual(summary["selected_votes"], 1)
             self.assertEqual(summary["orientations"], 1)
+
+    def test_collects_bench_votes_for_majority(self):
+        resolution = {
+            "deputies": [
+                {
+                    "resolution_status": "matched",
+                    "camara": {"id": 123},
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            summary = collect_votes_and_orientations(
+                resolution,
+                FakeClient(),
+                "2024-01-01",
+                "2024-01-31",
+                Path(directory),
+                workers=2,
+            )
+            self.assertEqual(summary["bench_votes"], 2)
+            bench_path = Path(directory) / "votos_completos.jsonl"
+            rows = [
+                json.loads(line)
+                for line in bench_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(
+                {row["deputado_"]["id"] for row in rows}, {123, 999}
+            )
 
 
 if __name__ == "__main__":
