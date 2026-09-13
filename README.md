@@ -14,7 +14,7 @@ O sistema não recomenda candidatos e não produz um ranking geral. Ele organiza
 e torna auditável um recorte de evidências que o usuário pode consultar ao formar
 sua própria opinião.
 
-Versão privada publicada: [Mandato em Evidência](https://mandato-em-evidencia.davigps.chatgpt.site)
+Versão privada publicada: [Mandato em Evidência](https://site-creator-vinext-starter.raphaelcabralnet.workers.dev/)
 
 ## Estado atual
 
