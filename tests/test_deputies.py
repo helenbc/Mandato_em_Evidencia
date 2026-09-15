@@ -28,6 +28,72 @@ class DeputyTests(unittest.TestCase):
         )
         self.assertIsNone(parse_deputy_cargo("Jornalista"))
 
+    def test_ambiguous_and_unmatched_on_low_margin_or_score(self):
+        extraction = {
+            "deputies": [
+                {
+                    "dataset_name": "Ana Silva",
+                    "normalized_name": "ANA SILVA",
+                    "parties": ["PT"],
+                    "ufs": ["CE"],
+                    "hearing_ids": [1],
+                    "hearing_count": 1,
+                    "opinion_count": 1,
+                    "sources": ["lds"],
+                    "cargos": ["Deputada (PT-CE)"],
+                },
+                {
+                    "dataset_name": "Bruno Costa",
+                    "normalized_name": "BRUNO COSTA",
+                    "parties": ["ABC"],
+                    "ufs": ["SP"],
+                    "hearing_ids": [1],
+                    "hearing_count": 1,
+                    "opinion_count": 1,
+                    "sources": ["lds"],
+                    "cargos": ["Deputado (ABC-SP)"],
+                },
+                {
+                    "dataset_name": "Carlos Ninguem",
+                    "normalized_name": "CARLOS NINGUEM",
+                    "parties": ["XYZ"],
+                    "ufs": ["RJ"],
+                    "hearing_ids": [1],
+                    "hearing_count": 1,
+                    "opinion_count": 1,
+                    "sources": ["lds"],
+                    "cargos": ["Deputado (XYZ-RJ)"],
+                },
+            ]
+        }
+
+        class LowMarginClient:
+            def search_deputies(self, name, legislature=None):
+                if name == "Ana Silva":
+                    # two identical high-score candidates -> margin 0 <0.05 -> ambiguous
+                    return [
+                        {"id": 1, "nome": "Ana Silva", "siglaPartido": "PT", "siglaUf": "CE"},
+                        {"id": 2, "nome": "Ana Silva", "siglaPartido": "PT", "siglaUf": "CE"},
+                    ]
+                if name == "Bruno Costa":
+                    # one low-score candidate -> score <0.86 -> ambiguous
+                    return [
+                        {"id": 3, "nome": "Xyz Desconhecido", "siglaPartido": "QQQ", "siglaUf": "AA"},
+                    ]
+                # Carlos -> no candidates -> unmatched
+                return []
+
+        result = resolve_deputies(extraction, LowMarginClient(), legislature=57)
+        by_name = {d["dataset_name"]: d for d in result["deputies"]}
+        self.assertEqual(by_name["Ana Silva"]["resolution_status"], "ambiguous")
+        self.assertIsNone(by_name["Ana Silva"]["camara"])
+        self.assertEqual(by_name["Bruno Costa"]["resolution_status"], "ambiguous")
+        self.assertIsNone(by_name["Bruno Costa"]["camara"])
+        self.assertEqual(by_name["Carlos Ninguem"]["resolution_status"], "unmatched")
+        self.assertIsNone(by_name["Carlos Ninguem"]["camara"])
+        self.assertEqual(result["status_counts"]["ambiguous"], 2)
+        self.assertEqual(result["status_counts"]["unmatched"], 1)
+
     def test_extract_and_resolve(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
