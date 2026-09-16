@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install pipeline
+        run: pip install -e .
+      - name: Python tests (offline)
+        run: PYTHONPATH=src python3 -m unittest discover -s tests -v
+      - name: Compile check
+        run: PYTHONPATH=src python3 -m compileall -q src tests
+      - name: Ensure dashboard not overwritten by test run
+        run: git diff --exit-code -- web/app/dashboard.json || (echo "web/app/dashboard.json foi alterado por run de teste — restaure antes de commitar" && exit 1)
