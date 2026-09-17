@@ -19,6 +19,7 @@ from .positions import (
     prepare_position_candidates,
     run_position_extraction,
 )
+from .gold import evaluate_gold
 from .web_export import export_dashboard_data
 
 
@@ -174,6 +175,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", type=Path, default=Path("web/app/dashboard.json")
     )
 
+    evaluate_gold_cmd = subparsers.add_parser(
+        "evaluate-gold", help="Avalia posicoes LLM contra gold set humano"
+    )
+    evaluate_gold_cmd.add_argument(
+        "--positions",
+        type=Path,
+        default=DEFAULT_PROCESSED / "analysis/posicoes_llm.jsonl",
+    )
+    evaluate_gold_cmd.add_argument(
+        "--gold", type=Path, default=Path("config/gold_set.jsonl")
+    )
+    evaluate_gold_cmd.add_argument(
+        "--output-dir", type=Path, default=DEFAULT_PROCESSED / "analysis"
+    )
+
     run = subparsers.add_parser("run", help="Executa as etapas 1 a 4")
     run.add_argument("--dataset-dir", type=Path, default=DEFAULT_DATASET)
     run.add_argument("--source", choices=("lds", "nli", "both"), default="lds")
@@ -278,6 +294,24 @@ def main(argv: list[str] | None = None) -> None:
                 "llm_status": dashboard["llmStatus"],
             }
         )
+        return
+    if args.command == "evaluate-gold":
+        from .alignment import read_jsonl
+
+        gold_path = Path(args.gold)
+        if not gold_path.is_file():
+            raise SystemExit(
+                f"Gold set não encontrado em {gold_path}. "
+                "Crie config/gold_set.jsonl a partir de config/gold_set.example.jsonl (curadoria pendente)."
+            )
+        positions_path = Path(args.positions)
+        positions = read_jsonl(positions_path) if positions_path.is_file() else []
+        gold_rows = read_jsonl(gold_path)
+        result = evaluate_gold(positions, gold_rows)
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        write_json(output_dir / "gold_metricas.json", result)
+        _print(result)
         return
 
     paths = DatasetPaths(args.dataset_dir)
