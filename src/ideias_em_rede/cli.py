@@ -87,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--max-votings", type=int)
     collect.add_argument("--organ")
     collect.add_argument("--workers", type=int, default=4)
+    collect.add_argument("--batch-days", type=int, default=None)
     _add_client_arguments(collect)
 
     alignment = subparsers.add_parser(
@@ -186,6 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--workers", type=int, default=4)
     run.add_argument("--minimum-score", type=float, default=0.86)
     run.add_argument("--minimum-margin", type=float, default=0.05)
+    run.add_argument("--batch-days", type=int, default=None)
     _add_client_arguments(run)
     return parser
 
@@ -226,6 +228,7 @@ def main(argv: list[str] | None = None) -> None:
                 max_votings=args.max_votings,
                 organ=args.organ,
                 workers=args.workers,
+                batch_days=args.batch_days,
             )
         )
         return
@@ -300,6 +303,7 @@ def main(argv: list[str] | None = None) -> None:
         max_votings=args.max_votings,
         organ=args.organ,
         workers=args.workers,
+        batch_days=args.batch_days,
     )
     _print(
         {
