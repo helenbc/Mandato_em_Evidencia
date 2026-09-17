@@ -1,0 +1,2 @@
+{"candidate_id": "exemplo:phbr:999:42:1", "stance": "FAVORAVEL", "evidence_quote": "Trecho de exemplo que sustenta posição favorável e é citação literal do chunk.", "anotador": "exemplo", "observacao": "linha de EXEMPLO - candidata ficticia, nao usar como avaliacao real"}
+{"candidate_id": "exemplo:phbr:999:43:1", "stance": "CONTRARIO", "evidence_quote": "Outro trecho de exemplo que sustenta posição contrária e é citação literal.", "anotador": "exemplo", "observacao": "linha de EXEMPLO - candidata ficticia, nao usar como avaliacao real"}
