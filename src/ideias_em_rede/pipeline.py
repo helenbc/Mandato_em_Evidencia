@@ -142,8 +142,7 @@ def collect_votes_and_orientations(
             for orientation in client.voting_orientations(voting_id):
                 orientations.append({"votacao_id": voting_id, **orientation})
 
-    # Deduplicação por id (necessária para modo batch e idempotência)
-    # votacoes já deduplicadas, mas garante novamente para matched_votings
+    # Deduplicação por id para modo batch e idempotência
     matched_votings_by_id: dict[str, dict[str, Any]] = {}
     for row in matched_votings:
         matched_votings_by_id[str(row["id"])] = row

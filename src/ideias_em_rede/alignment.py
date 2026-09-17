@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -42,26 +43,106 @@ def canonical_vote(value: Any) -> str | None:
     return aliases.get(normalized)
 
 
-def _orientation_parties(orientation: dict[str, Any]) -> set[str]:
+def _parse_iso_date(value: Any) -> date | None:
+    """Converte YYYY-MM-DD ou ISO datetime em date; None se ausente/inválido."""
+
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    if not text or text.lower() == "null":
+        return None
+    for sep in ("T", " "):
+        if sep in text:
+            text = text.split(sep)[0]
+            break
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _extract_voting_date(voting: dict[str, Any]) -> date | None:
+    """Extrai a data da votação (campo data ou dataHoraRegistro)."""
+
+    for key in ("data", "dataHoraRegistro", "dataHoraVotacao", "dataVotacao"):
+        raw = voting.get(key)
+        if raw:
+            parsed = _parse_iso_date(raw)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _federation_map_for_date(voting_date: date | str | None) -> dict[str, set[str]]:
+    """Carrega federações vigentes numa data (inicio <= data <= fim).
+
+    Lê config/federacoes.json em formato versionado; se ausente ou inválido,
+    retorna o dicionário estático FEDERATION_MEMBERS para não quebrar testes.
+    Se voting_date is None, retorna todas as federações (compatibilidade).
+    """
+
+    target: date | None = None
+    if voting_date is not None:
+        target = _parse_iso_date(voting_date)
+
+    config_path = Path(__file__).resolve().parents[2] / "config" / "federacoes.json"
+    if config_path.is_file():
+        try:
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+            result: dict[str, set[str]] = {}
+            for entry in raw:
+                sigla = entry.get("sigla")
+                if not sigla:
+                    continue
+                sigla_norm = normalize_text(str(sigla))
+                inicio = _parse_iso_date(entry.get("inicio"))
+                fim = _parse_iso_date(entry.get("fim"))
+                if target is not None:
+                    if inicio is not None and target < inicio:
+                        continue
+                    if fim is not None and target > fim:
+                        continue
+                membros = entry.get("membros") or []
+                membros_norm = {normalize_text(str(m)) for m in membros if normalize_text(str(m))}
+                if sigla_norm:
+                    result[sigla_norm] = membros_norm
+            return result
+        except Exception:
+            return FEDERATION_MEMBERS
+    return FEDERATION_MEMBERS
+
+
+def _orientation_parties(
+    orientation: dict[str, Any], voting_date: date | str | None = None
+) -> set[str]:
     label = normalize_text(orientation.get("siglaPartidoBloco"))
     if orientation.get("codTipoLideranca") == "P":
         return {label} if label else set()
-    return FEDERATION_MEMBERS.get(label, set())
+    fed_map = _federation_map_for_date(voting_date)
+    return fed_map.get(label, set())
 
 
 def resolve_orientation(
-    party: str, orientations: Iterable[dict[str, Any]]
+    party: str,
+    orientations: Iterable[dict[str, Any]],
+    voting_date: date | str | None = None,
 ) -> tuple[str, str | None, str | None]:
     """Resolve a orientação aplicável ao partido sem inferir blocos truncados.
 
     Retorna ``(status, orientação, fonte)``. Apenas uma orientação direta do
     partido ou de federação com composição declarada é considerada segura.
+    Se voting_date for informado, apenas federações vigentes naquela data
+    são consideradas.
     """
 
     expected_party = normalize_text(party)
     candidates: list[tuple[str, str]] = []
     for orientation in orientations:
-        if expected_party not in _orientation_parties(orientation):
+        if expected_party not in _orientation_parties(orientation, voting_date):
             continue
         value = canonical_vote(orientation.get("orientacaoVoto"))
         if value:
@@ -161,8 +242,10 @@ def compute_party_alignment(
         deputy = vote.get("deputado_") or vote.get("deputado") or {}
         party = str(deputy.get("siglaPartido") or "")
         vote_value = canonical_vote(vote.get("tipoVoto"))
+        voting = votings_by_id.get(voting_id, {})
+        voting_date = _extract_voting_date(voting)
         orientation_status, orientation_value, orientation_source = resolve_orientation(
-            party, orientations_by_voting[voting_id]
+            party, orientations_by_voting[voting_id], voting_date
         )
         majority_used = False
         if vote_value not in COMPARABLE_VOTES:
@@ -188,11 +271,10 @@ def compute_party_alignment(
             status = "excluded_orientation"
         else:
             status = "aligned" if vote_value == orientation_value else "diverged"
-        voting = votings_by_id.get(voting_id, {})
         details.append(
             {
                 "votacao_id": voting_id,
-                "data": voting.get("data"),
+                "data": voting.get("data") or voting.get("dataHoraRegistro"),
                 "descricao": voting.get("descricao"),
                 "votacao_uri": voting.get("uri"),
                 "deputado_id": deputy.get("id"),
