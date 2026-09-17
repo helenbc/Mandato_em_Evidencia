@@ -78,7 +78,6 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(summary["listed_votings"], 2)
             self.assertEqual(summary["votings_with_selected_votes"], 2)
 
-        # max_votings limits
         with tempfile.TemporaryDirectory() as directory:
             summary = collect_votes_and_orientations(
                 resolution,
@@ -92,7 +91,6 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(summary["listed_votings"], 1)
             self.assertEqual(summary["votings_with_selected_votes"], 1)
 
-        # organ + max_votings combined
         with tempfile.TemporaryDirectory() as directory:
             summary = collect_votes_and_orientations(
                 resolution,
@@ -109,13 +107,11 @@ class PipelineTests(unittest.TestCase):
     def test_writes_ordered_outputs(self):
         class OrderedClient:
             def list_votings(self, start_date, end_date):
-                # out of order on purpose
                 yield {"id": "v2", "dataHoraRegistro": "2024-01-02T10:00:00", "siglaOrgao": "PLEN"}
                 yield {"id": "v1", "dataHoraRegistro": "2024-01-01T10:00:00", "siglaOrgao": "PLEN"}
 
             def voting_votes(self, voting_id):
                 if voting_id == "v1":
-                    # reverse deputy order
                     return [
                         {"deputado_": {"id": 999, "nome": "Z"}, "tipoVoto": "Sim"},
                         {"deputado_": {"id": 123, "nome": "A"}, "tipoVoto": "Sim"},
@@ -152,9 +148,7 @@ class PipelineTests(unittest.TestCase):
                 for line in (Path(directory) / "votos.jsonl").read_text(encoding="utf-8").splitlines()
                 if line.strip()
             ]
-            # votacoes ordered by dataHoraRegistro then id
             self.assertEqual([row["id"] for row in votacoes], ["v1", "v2"])
-            # votos ordered by votacao_id then deputy id
             self.assertEqual(
                 [(row["votacao_id"], row["deputado_"]["id"]) for row in votos],
                 [("v1", 123), ("v1", 999), ("v2", 123)],
@@ -274,7 +268,6 @@ class PipelineTests(unittest.TestCase):
                     workers=1,
                     batch_days=1,
                 )
-                # mesmos contadores
                 self.assertEqual(
                     summary_single["listed_votings"], summary_batch["listed_votings"]
                 )
@@ -291,7 +284,6 @@ class PipelineTests(unittest.TestCase):
                 self.assertEqual(
                     summary_single["orientations"], summary_batch["orientations"]
                 )
-                # mesmos arquivos (conteúdo deduplicado)
                 for fname in [
                     "votacoes.jsonl",
                     "votos.jsonl",
@@ -302,7 +294,6 @@ class PipelineTests(unittest.TestCase):
                         self._read_jsonl_set(Path(dir_single) / fname),
                         self._read_jsonl_set(Path(dir_batch) / fname),
                     )
-                # summary batch contém lista de batches
                 self.assertIn("batches", summary_batch)
                 self.assertEqual(summary_batch["batch_days"], 1)
                 self.assertEqual(len(summary_batch["batches"]), 2)
@@ -327,7 +318,6 @@ class PipelineTests(unittest.TestCase):
             first_lines = [
                 line for line in first.read_text(encoding="utf-8").splitlines() if line.strip()
             ]
-            # segunda coleta no mesmo diretório, mesmo batch
             collect_votes_and_orientations(
                 resolution,
                 FakeClient(),
@@ -341,8 +331,7 @@ class PipelineTests(unittest.TestCase):
                 line for line in first.read_text(encoding="utf-8").splitlines() if line.strip()
             ]
             self.assertEqual(len(first_lines), len(second_lines))
-            self.assertEqual(len(first_lines), 1)  # só v1 tem voto selecionado
-            # conteúdo idêntico
+            self.assertEqual(len(first_lines), 1)
             self.assertEqual(
                 {json.loads(l)["id"] for l in first_lines},
                 {json.loads(l)["id"] for l in second_lines},
