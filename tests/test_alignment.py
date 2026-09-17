@@ -1,10 +1,14 @@
 import json
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
+from unittest import mock
 
 from ideias_em_rede.alignment import (
     _bench_index,
+    _federation_map_for_date,
+    _orientation_parties,
     compute_party_alignment,
     resolve_orientation,
     run_party_alignment,
@@ -186,7 +190,6 @@ class AlignmentTests(unittest.TestCase):
             self.assertEqual(details[0]["orientacao_fonte"], "MAIORIA_ABC")
             self.assertEqual(summary["totals"]["majority_fallback_votes"], 1)
 
-            # sem votos_completos -> sem fallback
             bench_path.unlink()
             output_dir2 = base / "output2"
             output_dir2.mkdir(parents=True)
@@ -220,6 +223,136 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual(details[0]["status"], "diverged")
         self.assertEqual(details[0]["orientacao"], "NAO")
         self.assertEqual(details[0]["orientacao_fonte"], "ABC")
+
+    def test_federation_only_within_vigency_via_resolve(self):
+        orientations = [
+            {
+                "codTipoLideranca": "F",
+                "siglaPartidoBloco": "Fdr PT-PCdoB-PV",
+                "orientacaoVoto": "Sim",
+            }
+        ]
+        self.assertEqual(resolve_orientation("PT", orientations, voting_date="2022-01-01")[:2], ("found", "SIM"))
+        self.assertEqual(resolve_orientation("PT", orientations, voting_date="2022-06-15")[:2], ("found", "SIM"))
+        self.assertEqual(resolve_orientation("PT", orientations, voting_date="2022-06-15T10:00:00")[:2], ("found", "SIM"))
+        self.assertEqual(resolve_orientation("PT", orientations, voting_date=date(2022, 2, 1))[:2], ("found", "SIM"))
+        self.assertEqual(resolve_orientation("PCDOB", orientations, voting_date="2023-01-01")[:2], ("found", "SIM"))
+        self.assertEqual(resolve_orientation("PV", orientations, voting_date="2022-01-01")[:2], ("found", "SIM"))
+        self.assertEqual(resolve_orientation("PT", orientations, voting_date="2021-12-31")[:2], ("no_orientation", None))
+        self.assertEqual(resolve_orientation("PV", orientations, voting_date="2021-06-01")[:2], ("no_orientation", None))
+        self.assertEqual(resolve_orientation("PT", orientations)[:2], ("found", "SIM"))
+        self.assertEqual(resolve_orientation("PT", orientations, voting_date=None)[:2], ("found", "SIM"))
+        orientations_psol = [
+            {
+                "codTipoLideranca": "F",
+                "siglaPartidoBloco": "Fdr PSOL-REDE",
+                "orientacaoVoto": "Não",
+            }
+        ]
+        self.assertEqual(resolve_orientation("PSOL", orientations_psol, voting_date="2022-01-01")[:2], ("found", "NAO"))
+        self.assertEqual(resolve_orientation("REDE", orientations_psol, voting_date="2021-06-01")[:2], ("no_orientation", None))
+
+    def test_federation_vigency_via_compute_party_alignment(self):
+        votes = [
+            {"votacao_id": "v1", "tipoVoto": "Sim", "deputado_": self._named_deputy(7, "PT")},
+        ]
+        orientations = [
+            {
+                "votacao_id": "v1",
+                "codTipoLideranca": "F",
+                "siglaPartidoBloco": "Fdr PT-PCdoB-PV",
+                "orientacaoVoto": "Sim",
+            }
+        ]
+        votings_before = [{"id": "v1", "data": "2021-12-31"}]
+        details_before, _ = compute_party_alignment(votes, orientations, votings_before)
+        self.assertEqual(details_before[0]["status"], "no_orientation")
+        self.assertIsNone(details_before[0]["orientacao"])
+        votings_inside = [{"id": "v1", "data": "2022-06-01"}]
+        details_inside, _ = compute_party_alignment(votes, orientations, votings_inside)
+        self.assertEqual(details_inside[0]["status"], "aligned")
+        self.assertEqual(details_inside[0]["orientacao"], "SIM")
+        votings_dt = [{"id": "v1", "dataHoraRegistro": "2022-06-01T10:00:00"}]
+        details_dt, _ = compute_party_alignment(votes, orientations, votings_dt)
+        self.assertEqual(details_dt[0]["status"], "aligned")
+
+    def test_federation_fim_respected(self):
+        custom = [
+            {"sigla": "Fdr PT-PCdoB-PV", "membros": ["PT", "PCDOB", "PV"], "inicio": "2022-01-01", "fim": "2022-12-31"},
+            {"sigla": "Fdr PSOL-REDE", "membros": ["PSOL", "REDE"], "inicio": "2022-01-01", "fim": None},
+        ]
+        with mock.patch("pathlib.Path.is_file", return_value=True):
+            with mock.patch("pathlib.Path.read_text", return_value=json.dumps(custom)):
+                orients = [
+                    {"codTipoLideranca": "F", "siglaPartidoBloco": "Fdr PT-PCdoB-PV", "orientacaoVoto": "Sim"}
+                ]
+                self.assertEqual(resolve_orientation("PT", orients, voting_date="2022-06-01")[:2], ("found", "SIM"))
+                self.assertEqual(resolve_orientation("PT", orients, voting_date="2023-01-01")[:2], ("no_orientation", None))
+                orients2 = [
+                    {"codTipoLideranca": "F", "siglaPartidoBloco": "Fdr PSOL-REDE", "orientacaoVoto": "Sim"}
+                ]
+                self.assertEqual(resolve_orientation("PSOL", orients2, voting_date="2023-06-01")[:2], ("found", "SIM"))
+
+    def test_fallback_when_config_missing(self):
+        with mock.patch("pathlib.Path.is_file", return_value=False):
+            fed = _federation_map_for_date("2022-06-01")
+            self.assertIn("FDR PT PCDOB PV", fed)
+            self.assertIn("FDR PSOL REDE", fed)
+            self.assertEqual(fed["FDR PT PCDOB PV"], {"PT", "PCDOB", "PV"})
+            orients = [
+                {"codTipoLideranca": "F", "siglaPartidoBloco": "Fdr PT-PCdoB-PV", "orientacaoVoto": "Sim"}
+            ]
+            self.assertEqual(resolve_orientation("PT", orients, voting_date="2022-06-01")[:2], ("found", "SIM"))
+
+    def test_deputy_party_change_uses_sigla_da_epoca(self):
+        votes = [
+            {"votacao_id": "v1", "tipoVoto": "Sim", "deputado_": {"id": 7, "nome": "Joao", "siglaPartido": "PT", "siglaUf": "CE"}},
+            {"votacao_id": "v2", "tipoVoto": "Sim", "deputado_": {"id": 7, "nome": "Joao", "siglaPartido": "PL", "siglaUf": "CE"}},
+        ]
+        orientations = [
+            {"votacao_id": "v1", "codTipoLideranca": "P", "siglaPartidoBloco": "PT", "orientacaoVoto": "Sim"},
+            {"votacao_id": "v2", "codTipoLideranca": "P", "siglaPartidoBloco": "PL", "orientacaoVoto": "Não"},
+        ]
+        votings = [{"id": "v1", "data": "2022-06-01"}, {"id": "v2", "data": "2022-06-02"}]
+        details, summary = compute_party_alignment(votes, orientations, votings)
+        by_id = {d["votacao_id"]: d for d in details}
+        self.assertEqual(by_id["v1"]["status"], "aligned")
+        self.assertEqual(by_id["v1"]["orientacao"], "SIM")
+        self.assertEqual(by_id["v1"]["orientacao_fonte"], "PT")
+        self.assertEqual(by_id["v1"]["partido"], "PT")
+        self.assertEqual(by_id["v2"]["status"], "diverged")
+        self.assertEqual(by_id["v2"]["orientacao"], "NAO")
+        self.assertEqual(by_id["v2"]["orientacao_fonte"], "PL")
+        self.assertEqual(by_id["v2"]["partido"], "PL")
+        self.assertEqual(summary["deputies"][0]["comparable_votes"], 2)
+        self.assertEqual(summary["deputies"][0]["aligned_votes"], 1)
+
+    def test_party_majority_uses_sigla_da_epoca(self):
+        votes_pt = [
+            {"votacao_id": "v1", "tipoVoto": "Não", "deputado_": self._named_deputy(7, "PT")},
+        ]
+        bench = [
+            self._bench_vote("v1", 7, "PT", "Não"),
+            self._bench_vote("v1", 8, "PT", "Sim"),
+            self._bench_vote("v1", 9, "PT", "Sim"),
+            self._bench_vote("v1", 10, "PL", "Não"),
+            self._bench_vote("v1", 11, "PL", "Não"),
+            self._bench_vote("v1", 12, "PL", "Não"),
+        ]
+        details, _ = compute_party_alignment(votes_pt, [], [], bench_votes=bench)
+        self.assertEqual(details[0]["orientacao"], "SIM")
+        self.assertEqual(details[0]["orientacao_fonte"], "MAIORIA_PT")
+        self.assertEqual(details[0]["status"], "diverged")
+        votes_pl = [
+            {"votacao_id": "v1", "tipoVoto": "Não", "deputado_": self._named_deputy(7, "PL")},
+        ]
+        details_pl, _ = compute_party_alignment(votes_pl, [], [], bench_votes=bench)
+        self.assertEqual(details_pl[0]["orientacao"], "NAO")
+        self.assertEqual(details_pl[0]["orientacao_fonte"], "MAIORIA_PL")
+        self.assertEqual(details_pl[0]["status"], "aligned")
+        self.assertEqual(_orientation_parties({"codTipoLideranca": "P", "siglaPartidoBloco": "PT"}), {"PT"})
+        self.assertEqual(_orientation_parties({"codTipoLideranca": "F", "siglaPartidoBloco": "Fdr PT-PCdoB-PV"}, voting_date="2022-06-01"), {"PT", "PCDOB", "PV"})
+        self.assertEqual(_orientation_parties({"codTipoLideranca": "F", "siglaPartidoBloco": "Fdr PT-PCdoB-PV"}, voting_date="2021-01-01"), set())
 
     @staticmethod
     def _named_deputy(deputy_id, party="ABC"):

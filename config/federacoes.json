@@ -1,0 +1,14 @@
+[
+  {
+    "sigla": "Fdr PT-PCdoB-PV",
+    "membros": ["PT", "PCDOB", "PV"],
+    "inicio": "2022-01-01",
+    "fim": null
+  },
+  {
+    "sigla": "Fdr PSOL-REDE",
+    "membros": ["PSOL", "REDE"],
+    "inicio": "2022-01-01",
+    "fim": null
+  }
+]
