@@ -10,4 +10,5 @@ data/processed/
 .pnpm-store/
 .DS_Store
 node_modules/
+.opencode/
 
