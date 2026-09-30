@@ -5,12 +5,13 @@ type IntroBandProps = {
     comparableVotes: number;
     classifiedSpeeches: number;
   };
+  scope: string;
   generatedAt: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
 
-export function IntroBand({ stats, generatedAt, open, onOpenChange }: IntroBandProps) {
+export function IntroBand({ stats, scope, generatedAt, open, onOpenChange }: IntroBandProps) {
   return (
     <section className="intro" aria-label="Sobre este painel">
       <div className="intro-row">
@@ -56,9 +57,7 @@ export function IntroBand({ stats, generatedAt, open, onOpenChange }: IntroBandP
               <div><strong>{stats.comparableVotes}</strong><span>votos comparáveis</span></div>
               <div><strong>{stats.classifiedSpeeches}</strong><span>falas classificadas</span></div>
             </div>
-            <p className="intro-scope">
-              Recorte atual: votações do Plenário em 10 de julho de 2024 e falas do PublicHearingBR.
-            </p>
+            <p className="intro-scope">{scope}</p>
           </div>
 
           <div className="source-line">

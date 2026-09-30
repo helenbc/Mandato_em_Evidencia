@@ -1,4 +1,5 @@
 import dashboard from "../dashboard.json";
+import { scopeText, stats } from "../lib/deputies";
 import { CurvedArrow } from "./CurvedArrow";
 
 type LandingProps = {
@@ -29,19 +30,15 @@ export function Landing({ onExploreClick }: LandingProps) {
         <div className="landing-split-left">
           <p className="eyebrow">Transparência parlamentar baseada em evidências</p>
           <h1>O que foi dito.<br /><em>O que foi votado.</em></h1>
-          <div className="landing-visual-placeholder" aria-hidden="true">
-            <span>imagem em definição</span>
-          </div>
+          <img className="landing-visual" src="/plenario.png" alt="Plenário do Congresso Nacional visto de cima" />
 
           <div className="landing-stats-mini">
-            <div><strong>{dashboard.stats.deputies}</strong><span>parlamentares</span></div>
-            <div><strong>{dashboard.stats.recordedVotes}</strong><span>votos nominais</span></div>
-            <div><strong>{dashboard.stats.comparableVotes}</strong><span>votos comparáveis</span></div>
-            <div><strong>{dashboard.stats.classifiedSpeeches}</strong><span>falas classificadas</span></div>
+            <div><strong>{stats.deputies}</strong><span>parlamentares</span></div>
+            <div><strong>{stats.recordedVotes}</strong><span>votos nominais</span></div>
+            <div><strong>{stats.comparableVotes}</strong><span>votos comparáveis</span></div>
+            <div><strong>{stats.classifiedSpeeches}</strong><span>falas classificadas</span></div>
           </div>
-          <p className="landing-scope">
-            Recorte atual: votações do Plenário em 10 de julho de 2024 e falas do PublicHearingBR.
-          </p>
+          <p className="landing-scope">{scopeText}</p>
         </div>
 
         <div className="landing-split-right">
@@ -50,8 +47,8 @@ export function Landing({ onExploreClick }: LandingProps) {
             O Mandato em Evidência cruza as falas em audiências públicas com os
             votos nominais no plenário, pra mostrar, com fonte, se o que foi dito
             bate com o que foi votado. Sem ranking, sem recomendação de voto,
-            cada posição exige citação literal da transcrição, e cada voto linka
-            direto pra fonte oficial da Câmara.
+            cada posição exige citação literal da transcrição, cada voto tem
+            ligação com a fonte oficial da Câmara.
           </p>
 
           <p className="eyebrow landing-limits-kicker">Os limites, ditos com clareza</p>
@@ -60,7 +57,7 @@ export function Landing({ onExploreClick }: LandingProps) {
             orientação explícita do partido ou de uma federação reconhecível.
             Ausências, bancadas liberadas e orientações ambíguas ficam fora do
             cálculo. A análise de falas exige citação literal da transcrição e
-            preserva “não determinado” quando a evidência não é suficiente.
+            preserva incerteza.
           </p>
 
           <p className="landing-source">

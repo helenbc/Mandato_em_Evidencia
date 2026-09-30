@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import dashboard from "../dashboard.json";
-import type { Deputy } from "../lib/types";
+import { deputies, scopeText, stats } from "../lib/deputies";
 import { useDeputyDirectory } from "../hooks/useDeputyDirectory";
 import { useSelectedDeputy } from "../hooks/useSelectedDeputy";
 import { SiteHeader } from "./SiteHeader";
@@ -11,10 +11,6 @@ import { IntroBand } from "./IntroBand";
 import { DeputyDirectory } from "./DeputyDirectory";
 import { DeputyProfile } from "./DeputyProfile";
 import type { ProfileTab } from "./ProfileTabs";
-
-const deputies = (dashboard.deputies as Deputy[]).filter(
-  (deputy) => deputy.alignment?.alignment_score != null,
-);
 
 type FerramentaProps = {
   onBackToLanding: () => void;
@@ -58,7 +54,8 @@ export function Ferramenta({ onBackToLanding }: FerramentaProps) {
       </section>
 
       <IntroBand
-        stats={dashboard.stats}
+        stats={stats}
+        scope={scopeText}
         generatedAt={generated}
         open={methodologyOpen}
         onOpenChange={setMethodologyOpen}

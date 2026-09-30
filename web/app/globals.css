@@ -176,7 +176,7 @@ nav a:hover { color: var(--coral); }
 
 .landing-split-left h1 { margin: 12px 0 0; font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: clamp(26px, 2vw + 2.4vh, 56px); line-height: 1.05; letter-spacing: -.03em; }
 .landing-split-left h1 em { color: var(--coral); font-weight: 400; }
-.landing-visual-placeholder { display: flex; align-items: center; justify-content: center; width: clamp(280px, 24vw + 10vh, 480px); max-width: 100%; aspect-ratio: 16 / 10; margin-top: clamp(20px, 3vh, 48px); border: 1px dashed #b7b1a3; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.landing-visual { display: block; width: clamp(280px, 24vw + 10vh, 480px); max-width: 100%; aspect-ratio: 16 / 10; object-fit: cover; margin-top: clamp(20px, 3vh, 48px); }
 
 .landing-stats-mini { display: flex; justify-content: center; gap: clamp(18px, 2vw, 30px); flex-wrap: wrap; margin-top: clamp(16px, 3vh, 36px); }
 .landing-stats-mini div { display: flex; flex-direction: column; }
